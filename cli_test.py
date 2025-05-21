@@ -19,9 +19,9 @@ console = Console()
 class ChatbotTester:
     """Simple CLI for testing RAG Chatbot API"""
     
-    def __init__(self, host="http://localhost:8000"):
+    def __init__(self, host="http://localhost:8000", user_id="test-user-123"):
         self.host = host
-        self.user_id = "test-user-123"  # Default test user
+        self.user_id = user_id
         self.thread_id = None
     
     def display_welcome(self):

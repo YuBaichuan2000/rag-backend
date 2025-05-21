@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
     
+    # Add these two lines:
+    API_URL: str = os.getenv("API_URL", "http://localhost:8000")
+    TEST_USER_ID: str = os.getenv("TEST_USER_ID", "test-user-123")
+    
     # MongoDB settings
     MONGODB_CONNECTION_STRING: str = os.getenv("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017/")
     DB_NAME: str = os.getenv("DB_NAME", "rag_chatbot")
