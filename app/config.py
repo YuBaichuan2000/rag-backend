@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
     # LLM settings
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.2"))
     
     # Document processing

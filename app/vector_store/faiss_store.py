@@ -48,7 +48,7 @@ class FAISSVectorStore:
         
         # If this is the first addition, create the store
         # FIXED: Check docstore.dict instead of using len()
-        if self._vector_store.index is None or not self._vector_store.docstore.dict:
+        if self._vector_store.index is None or not self._vector_store.docstore._dict:
             print("Creating new FAISS index")
             self._vector_store = FAISS.from_documents(documents, self.embeddings)
             print("Created new FAISS index")
@@ -65,30 +65,40 @@ class FAISSVectorStore:
         print(f"Searching FAISS for: '{query}' (k={k}, user_id={user_id})")
         
         # If the index is empty, return empty results
-        if self._vector_store.index is None or len(self._vector_store.docstore) == 0:
+        if self._vector_store.index is None or len(self._vector_store.docstore._dict) == 0:
             print("FAISS index is empty, returning no results")
             return []
         
         # Perform search
-        if user_id:
-            # Filter by user_id
-            filter_dict = {"user_id": user_id}
-            try:
-                docs = self._vector_store.similarity_search(
-                    query, k=k, filter=filter_dict
-                )
-            except Exception as e:
-                print(f"Error in FAISS search with filter: {str(e)}")
-                # Fall back to unfiltered search
+        try:
+            if user_id:
+                # Filter by user_id
+                filter_dict = {"user_id": user_id}
+                try:
+                    docs = self._vector_store.similarity_search(
+                        query, k=k, filter=filter_dict
+                    )
+                except Exception as e:
+                    print(f"Error in FAISS search with filter: {str(e)}")
+                    # Fall back to unfiltered search
+                    docs = self._vector_store.similarity_search(query, k=k)
+                    # Manually filter results
+                    docs = [doc for doc in docs if doc.metadata.get("user_id") == user_id][:k]
+            else:
+                # No filter
                 docs = self._vector_store.similarity_search(query, k=k)
-                # Manually filter results
-                docs = [doc for doc in docs if doc.metadata.get("user_id") == user_id][:k]
-        else:
-            # No filter
-            docs = self._vector_store.similarity_search(query, k=k)
-        
-        print(f"Found {len(docs)} similar documents")
-        return docs
+            
+            print(f"Found {len(docs)} similar documents")
+            # Debug: Log the first document content to verify retrieval is working
+            if docs:
+                print(f"First document excerpt: {docs[0].page_content[:100]}...")
+            
+            return docs
+        except Exception as e:
+            print(f"Error in similarity_search: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return []  # Return empty list on error
     
     def save_local(self, folder_path: str = "faiss_index"):
         """Save the FAISS index locally"""
@@ -102,9 +112,10 @@ class FAISSVectorStore:
     def load_local(self, folder_path: str = "faiss_index"):
         """Load the FAISS index from disk"""
         try:
-            self._vector_store = FAISS.load_local(folder_path, self.embeddings)
+            self._vector_store = FAISS.load_local(folder_path, self.embeddings, allow_dangerous_deserialization=True)
             print(f"FAISS index loaded from {folder_path}")
-            print(f"Index contains {len(self._vector_store.docstore)} documents")
+            docstore_size = len(self._vector_store.docstore._dict) if hasattr(self._vector_store.docstore, '_dict') else 0
+            print(f"Index contains {docstore_size} documents")
         except Exception as e:
             print(f"Error loading FAISS index: {str(e)}")
             # Initialize a new one
