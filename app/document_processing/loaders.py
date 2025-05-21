@@ -8,25 +8,35 @@ from langchain_core.documents import Document
 from langchain_community.document_loaders import WebBaseLoader, PyPDFLoader, TextLoader
 
 async def load_document_from_url(url: str, title: Optional[str] = None) -> List[Document]:
-    """Load document from URL"""
+    """Load document from URL with enhanced debugging"""
+    print(f"load_document_from_url: Starting with URL {url}")
     try:
+        print(f"Creating WebBaseLoader for URL: {url}")
         loader = WebBaseLoader(url)
+        print(f"Calling loader.load()")
         documents = loader.load()
+        print(f"✅ Successfully loaded {len(documents)} documents from URL")
         
         # Set title if provided or extract from URL
         doc_title = title or url.split("/")[-1]
+        print(f"Setting document title: {doc_title}")
         
         # Update metadata
-        for doc in documents:
+        for i, doc in enumerate(documents):
             doc.metadata.update({
                 "source": url,
                 "title": doc_title,
                 "type": "url",
                 "date_added": datetime.now()
             })
+            print(f"Updated metadata for document {i+1}")
         
         return documents
     except Exception as e:
+        import traceback
+        print(f"❌ ERROR in load_document_from_url: {str(e)}")
+        print(f"Exception type: {type(e).__name__}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"Failed to load URL: {str(e)}")
 
 async def load_document_from_pdf(file_content: bytes, filename: str, title: Optional[str] = None) -> List[Document]:

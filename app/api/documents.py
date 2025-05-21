@@ -14,13 +14,25 @@ router = APIRouter()
 
 @router.post("/upload-url", response_model=DocumentUploadResponse)
 async def upload_url(request: URLUploadRequest):
-    """Upload a document from a URL"""
+    """Upload a document from a URL with enhanced debugging"""
+    print(f"\n==== URL UPLOAD ATTEMPT ====")
+    print(f"URL: {request.url}")
+    print(f"User ID: {request.user_id}")
+    print(f"Title: {request.title or 'Not provided'}")
+    
     try:
-        # Load document from URL
+        print(f"Step 1: Loading document from URL")
         documents = await load_document_from_url(request.url, request.title)
+        print(f"✅ Successfully loaded document from URL")
+        print(f"Document count: {len(documents)}")
+        if documents:
+            print(f"First document content length: {len(documents[0].page_content)}")
+            print(f"First document metadata: {documents[0].metadata}")
         
-        # Process and store documents
+        print(f"Step 2: Processing and storing documents")
         document_ids = await process_and_store_documents(documents, request.user_id)
+        print(f"✅ Successfully processed and stored documents")
+        print(f"Document IDs: {document_ids}")
         
         # Return information about the stored document
         return DocumentUploadResponse(
@@ -31,6 +43,10 @@ async def upload_url(request: URLUploadRequest):
         )
     
     except Exception as e:
+        import traceback
+        print(f"❌ ERROR in upload_url: {str(e)}")
+        print(f"Exception type: {type(e).__name__}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
 @router.post("/upload-file", response_model=DocumentUploadResponse)

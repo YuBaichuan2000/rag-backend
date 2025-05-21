@@ -36,16 +36,20 @@ class FAISSVectorStore:
             return
             
         print(f"Adding {len(documents)} documents to FAISS store")
+        print(f"User ID: {user_id}")
         
         # Add user_id to metadata if provided
         if user_id:
-            for doc in documents:
+            for i, doc in enumerate(documents):
                 if not doc.metadata:
                     doc.metadata = {}
                 doc.metadata["user_id"] = user_id
+                print(f"Added user_id to document {i+1} metadata")
         
         # If this is the first addition, create the store
-        if self._vector_store.index is None or len(self._vector_store.docstore) == 0:
+        # FIXED: Check docstore.dict instead of using len()
+        if self._vector_store.index is None or not self._vector_store.docstore.dict:
+            print("Creating new FAISS index")
             self._vector_store = FAISS.from_documents(documents, self.embeddings)
             print("Created new FAISS index")
         else:
@@ -53,7 +57,8 @@ class FAISSVectorStore:
             print("Adding to existing FAISS index")
             self._vector_store.add_documents(documents)
         
-        print(f"FAISS index now contains {len(self._vector_store.docstore)} documents")
+        # Better way to report the size of the index
+        print(f"FAISS index now contains {len(self._vector_store.docstore._dict)} documents")
     
     def similarity_search(self, query: str, k: int = 4, user_id: Optional[str] = None):
         """Search for similar documents"""
