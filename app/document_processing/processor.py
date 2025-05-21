@@ -9,10 +9,13 @@ from langchain_openai import OpenAIEmbeddings
 
 from ..config import settings
 from ..db.mongodb import get_database
+from ..vector_store.faiss_store import get_vector_store  # Updated import
 
 async def process_and_store_documents(documents: List[Document], user_id: str):
-    """Process documents and store in MongoDB"""
+    """Process documents and store in MongoDB with FAISS for vectors"""
     try:
+        print(f"Processing {len(documents)} documents for user {user_id}")
+        
         db = get_database()
         
         # Split documents into chunks
@@ -22,8 +25,9 @@ async def process_and_store_documents(documents: List[Document], user_id: str):
             length_function=len,
         )
         chunks = text_splitter.split_documents(documents)
+        print(f"Split into {len(chunks)} chunks")
         
-        # Store original documents
+        # Store original documents in MongoDB
         docs_collection = db[settings.DOCUMENTS_COLLECTION]
         document_ids = []
         
@@ -40,17 +44,14 @@ async def process_and_store_documents(documents: List[Document], user_id: str):
                 "date_added": datetime.now()
             }
             docs_collection.insert_one(doc_record)
-        
-        # Create embeddings
-        embeddings = OpenAIEmbeddings()
-        
-        # Add embeddings to MongoDB
-        vectors_collection = db[settings.VECTORS_COLLECTION]
-        
-        for chunk in chunks:
-            # Generate embedding
-            embedding_vector = embeddings.embed_query(chunk.page_content)
             
+            # Add document_id to metadata for reference
+            if not doc.metadata:
+                doc.metadata = {}
+            doc.metadata["document_id"] = doc_id
+        
+        # Add parent document reference to chunks
+        for chunk in chunks:
             # Find document this chunk belongs to
             parent_doc = None
             for doc in documents:
@@ -58,21 +59,25 @@ async def process_and_store_documents(documents: List[Document], user_id: str):
                     parent_doc = doc
                     break
             
-            if parent_doc:
-                # Create vector record
-                vector_record = {
-                    "content": chunk.page_content,
-                    "embedding": embedding_vector,
-                    "metadata": {
-                        **chunk.metadata,
-                        "parent_document_id": document_ids[documents.index(parent_doc)],
-                        "user_id": user_id
-                    }
-                }
-                
-                vectors_collection.insert_one(vector_record)
+            if parent_doc and "document_id" in parent_doc.metadata:
+                # Add reference to parent document
+                if not chunk.metadata:
+                    chunk.metadata = {}
+                chunk.metadata["parent_document_id"] = parent_doc.metadata["document_id"]
         
+        # Add to FAISS vector store
+        print("Adding chunks to FAISS vector store")
+        vector_store = get_vector_store()
+        vector_store.add_documents(chunks, user_id)
+        
+        # Optionally save the FAISS index for persistence
+        vector_store.save_local("faiss_index")
+        
+        print(f"Successfully processed documents: {document_ids}")
         return document_ids
     
     except Exception as e:
+        print(f"Error processing documents: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error processing documents: {str(e)}")

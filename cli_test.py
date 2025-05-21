@@ -19,7 +19,7 @@ console = Console()
 class ChatbotTester:
     """Simple CLI for testing RAG Chatbot API"""
     
-    def __init__(self, host="http://localhost:8000", user_id="test-user-123"):
+    def __init__(self, host, user_id):
         self.host = host
         self.user_id = user_id
         self.thread_id = None
@@ -70,8 +70,8 @@ class ChatbotTester:
     def new_conversation(self):
         """Start a new conversation"""
         try:
-            endpoint = f"{self.host}/new-conversation"
-            response = requests.post(endpoint, json={"user_id": self.user_id})
+            endpoint = f"{self.host}/new-conversation?user_id={self.user_id}"
+            response = requests.post(endpoint)
             response.raise_for_status()
             
             # Parse response
@@ -225,7 +225,7 @@ class ChatbotTester:
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="RAG Chatbot API CLI Tester")
-    parser.add_argument("--host", default=os.getenv("API_URL", "http://localhost:8000"), 
+    parser.add_argument("--host", default=os.getenv("API_URL", "http://localhost:8001"), 
                         help="API host URL")
     parser.add_argument("--user", default=os.getenv("TEST_USER_ID", "test-user-123"), 
                         help="User ID for testing")

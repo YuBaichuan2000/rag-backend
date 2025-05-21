@@ -2,10 +2,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import os
 
 from .config import settings
 from .db.mongodb import init_database
 from .api import chat, documents
+from .vector_store.faiss_store import get_vector_store  # Import the FAISS store
 
 # Initialize FastAPI app
 app = FastAPI(title="RAG Chatbot API")
@@ -19,10 +21,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize database
+# Initialize database and vector store
 @app.on_event("startup")
-async def startup_db_client():
+async def startup():
+    # Initialize MongoDB
     app.mongodb = init_database()
+    
+    # Initialize FAISS vector store
+    vector_store = get_vector_store()
+    
+    # Load existing FAISS index if available
+    if os.path.exists("faiss_index"):
+        try:
+            vector_store.load_local("faiss_index")
+            print("Loaded existing FAISS index")
+        except Exception as e:
+            print(f"Error loading FAISS index: {e}")
+            print("Starting with a new FAISS index")
 
 # Include routers
 app.include_router(chat.router, tags=["chat"])

@@ -9,11 +9,11 @@ load_dotenv()
 class Settings(BaseSettings):
     # API settings
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
-    API_PORT: int = int(os.getenv("API_PORT", "8000"))
+    API_PORT: int = int(os.getenv("API_PORT", "8001"))
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
     
     # Add these two lines:
-    API_URL: str = os.getenv("API_URL", "http://localhost:8000")
+    API_URL: str = os.getenv("API_URL", "http://localhost:8001")
     TEST_USER_ID: str = os.getenv("TEST_USER_ID", "test-user-123")
     
     # MongoDB settings
