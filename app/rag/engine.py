@@ -10,9 +10,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from ..config import settings
 from ..vector_store.faiss_store import get_vector_store
 from ..db.mongodb import get_database
-
-# Dictionary to store thread states
-THREAD_MESSAGES = {}
+from typing import Optional, List
 
 class RAGEngine:
     """RAG Engine using LangGraph"""
@@ -53,6 +51,7 @@ class RAGEngine:
         
         # Use memory-based checkpointer for simplicity
         checkpointer = InMemorySaver()
+        print(f"💾 Using InMemorySaver checkpointer")
         
         # Create the LLM with tools
         llm_with_tools = self.llm.bind_tools([retrieve])
@@ -61,6 +60,10 @@ class RAGEngine:
         def call_model(state):
             """Process messages and generate a response"""
             messages = state["messages"]
+            print(f"🧠 call_model received {len(messages)} messages")
+            # Debug: Log message types in current state
+            for i, msg in enumerate(messages[-3:]):  # Show last 3 messages
+                print(f"  📝 Message {i}: {msg.type} - {str(msg.content)[:50]}...")
             
             # Add system message if not present
             if not any(msg.type == "system" for msg in messages):
@@ -74,8 +77,8 @@ class RAGEngine:
             # Generate response
             response = llm_with_tools.invoke(messages)
             
-            # Return updated state
-            return {"messages": messages + [response]}
+            # Return updated state (MessagesState automatically appends)
+            return {"messages": [response]}
         
         # Tool execution node
         tools_node = ToolNode(tools=[retrieve])
@@ -106,126 +109,59 @@ class RAGEngine:
         
         return graph
     
-    def process_message(self, message, thread_id=None):
-        """Process a user message and return a response with tool call handling"""
+    def process_message(self, message: str, thread_id: Optional[str] = None) -> tuple[str, str]:
+        """
+        NEW: Process message using LangGraph's native message management
+        This is the preferred method that leverages LangGraph's built-in state handling
+        """
         try:
             thread_id = thread_id or str(uuid.uuid4())
-            print(f"Processing message with thread_id: {thread_id}")
+            print(f"\n🆕 === LANGGRAPH NATIVE METHOD ===")
+            print(f"🔗 Processing message with thread_id: {thread_id}")
+            print(f"📝 Message: {message[:100]}...")
             
-            # Get or initialize message history for this thread
-            if thread_id in THREAD_MESSAGES:
-                messages = THREAD_MESSAGES[thread_id].copy()  # Create a copy to work with
-                
-                # CRITICAL FIX: Check if the last message is an assistant message with tool calls but no tool responses
-                if len(messages) > 0 and messages[-1].type == "ai" and hasattr(messages[-1], "tool_calls") and messages[-1].tool_calls:
-                    print("Detected incomplete tool call sequence, cleaning up...")
-                    # Remove the last message with incomplete tool calls
-                    messages.pop()
-                    print(f"Removed incomplete message, now have {len(messages)} messages")
-                
-                # Add the new message
-                messages.append(HumanMessage(content=message))
-                print(f"Added message to existing thread with {len(messages)} messages")
-            else:
-                # Start a new conversation with system message
-                system_message = SystemMessage(content=
-                    "You are an AI assistant that responds to questions based on stored documents. "
-                    "Use the retrieval tool to find relevant information when needed. "
-                    "ALWAYS use the retrieval tool first when answering questions about documents or topics "
-                    "that might be in the user's documents. If you don't know the answer, say so."
-                )
-                messages = [system_message, HumanMessage(content=message)]
-                print(f"Created new thread with system message")
-            
-            # Configuration with thread_id
+            # Configuration with thread_id for LangGraph persistence
             config = {"configurable": {"thread_id": thread_id}}
-            print(f"LangGraph config: {config}")
+            print(f"⚙️ LangGraph config: {config}")
             
-            # Process the message
-            print(f"Invoking LangGraph with message: {message[:50]}...")
-            try:
-                result = self.graph.invoke(
-                    {"messages": messages},
-                    config=config
-                )
-                print(f"LangGraph result obtained: {result.keys()}")
-                
-                # Debug: Check the last few messages to ensure tool calls are properly paired
-                last_messages = result["messages"][-3:] if len(result["messages"]) >= 3 else result["messages"]
-                for i, msg in enumerate(last_messages):
-                    print(f"Message {i}: type={msg.type}")
-                    if hasattr(msg, "tool_calls") and msg.tool_calls:
-                        print(f"  Has tool_calls: {len(msg.tool_calls)}")
-                        for tc in msg.tool_calls:
-                            print(f"  Tool call: {tc.get('id', 'unknown')}")
-                
-                # Store the updated messages
-                THREAD_MESSAGES[thread_id] = result["messages"]
-                print(f"Stored updated thread with {len(THREAD_MESSAGES[thread_id])} messages")
-                
-                # Get the last AI message as the response
-                ai_message = result["messages"][-1]
-                response_text = ai_message.content
-                
-                return response_text, thread_id
-                
-            except Exception as e:
-                print(f"Error during LangGraph invoke: {str(e)}")
-                error_message = str(e).lower()
-                
-                # Handle tool call errors
-                if "tool_call" in error_message and "must be followed by tool messages" in error_message:
-                    print("TOOL CALL ERROR: Cleaning up conversation history...")
-                    
-                    # Find and remove problematic messages
-                    clean_messages = []
-                    pending_tool_calls = set()
-                    
-                    for msg in messages:
-                        # Track tool calls from AI
-                        if msg.type == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                if "id" in tc:
-                                    pending_tool_calls.add(tc["id"])
-                        
-                        # Track tool responses
-                        if msg.type == "tool" and hasattr(msg, "tool_call_id"):
-                            if msg.tool_call_id in pending_tool_calls:
-                                pending_tool_calls.remove(msg.tool_call_id)
-                        
-                        # Keep this message if it's not an AI message with pending tool calls
-                        if not (msg.type == "ai" and hasattr(msg, "tool_calls") and 
-                            any(tc.get("id") in pending_tool_calls for tc in msg.tool_calls)):
-                            clean_messages.append(msg)
-                    
-                    # Try again with cleaned messages
-                    messages = clean_messages + [HumanMessage(content=message)]
-                    print(f"Retrying with cleaned conversation ({len(messages)} messages)...")
-                    result = self.graph.invoke(
-                        {"messages": messages},
-                        config=config
-                    )
-                    
-                    # Store the updated messages
-                    THREAD_MESSAGES[thread_id] = result["messages"]
-                    print(f"Stored updated thread with {len(THREAD_MESSAGES[thread_id])} messages")
-                    
-                    # Get the last AI message as the response
-                    ai_message = result["messages"][-1]
-                    response_text = ai_message.content
-                    
-                    return response_text, thread_id
-                
-                # For other errors, just raise
-                raise
-                
+            # Let LangGraph handle the message history automatically
+            # We only pass the new human message - LangGraph retrieves existing history
+            input_state = {"messages": [HumanMessage(content=message)]}
+            print(f"📤 Sending to LangGraph: 1 new HumanMessage")
+            
+            # Process the message using LangGraph's state management
+            print(f"🚀 Invoking LangGraph...")
+            result = self.graph.invoke(input_state, config=config)
+            print(f"✅ LangGraph completed successfully")
+            print(f"📥 Result contains {len(result['messages'])} total messages")
+            
+            # Debug: Show the conversation flow
+            print(f"🔍 === CONVERSATION FLOW DEBUG ===")
+            for i, msg in enumerate(result["messages"][-5:]):  # Show last 5 messages
+                msg_preview = str(msg.content)[:80] + "..." if len(str(msg.content)) > 80 else str(msg.content)
+                tool_info = ""
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    tool_info = f" [🛠️ {len(msg.tool_calls)} tool calls]"
+                elif hasattr(msg, "tool_call_id"):
+                    tool_info = f" [🔧 tool response to {msg.tool_call_id[:8]}...]"
+                print(f"  {i}: {msg.type.upper()}{tool_info} - {msg_preview}")
+            
+            # Get the last AI message as the response
+            ai_message = result["messages"][-1]
+            response_text = ai_message.content
+            
+            print(f"💬 Final response: {response_text[:100]}...")
+            print(f"✅ === LANGGRAPH NATIVE METHOD COMPLETED ===\n")
+            
+            return response_text, thread_id
+            
         except Exception as e:
-            print(f"Error in process_message: {str(e)}")
+            print(f"❌ Error in LangGraph native method: {str(e)}")
             import traceback
-            print(traceback.format_exc())
+            print(f"📋 Traceback: {traceback.format_exc()}")
             
             # Provide a fallback response
-            return "I encountered a technical issue. Please try again or rephrase your question.", thread_id
+            return f"I encountered a technical issue with the new system: {str(e)}", thread_id
 
 # Factory function
 def get_rag_engine():
