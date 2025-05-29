@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     DOCUMENTS_COLLECTION: str = os.getenv("DOCUMENTS_COLLECTION", "documents")
     VECTORS_COLLECTION: str = os.getenv("VECTORS_COLLECTION", "vectors")
     CHAT_HISTORY_COLLECTION: str = os.getenv("CHAT_HISTORY_COLLECTION", "conversations")
+    MESSAGES_COLLECTION: str = os.getenv("MESSAGES_COLLECTION", "messages")
+
+    # Vector Store Settings
+    VECTOR_STORE_TYPE: str = os.getenv("VECTOR_STORE_TYPE", "mongodb")  # "mongodb" or "faiss"
+    
+    # MongoDB Atlas Vector Search Settings (for production)
+    ATLAS_VECTOR_INDEX_NAME: str = os.getenv("ATLAS_VECTOR_INDEX_NAME", "vector_index")
     
     # OpenAI settings
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -36,6 +43,10 @@ class Settings(BaseSettings):
     # Document processing
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "200"))
+
+    # Vector search settings
+    SIMILARITY_SEARCH_K: int = int(os.getenv("SIMILARITY_SEARCH_K", "4"))
+    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.7"))
     
     # Atlas-specific settings
     ATLAS_PROJECT_ID: str = os.getenv("ATLAS_PROJECT_ID", "")

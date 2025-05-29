@@ -1,4 +1,4 @@
-# app/document_processing/processor.py - FIXED FOR ATLAS
+# app/document_processing/processor.py - Updated for MongoDB Vector Store
 import uuid
 from datetime import datetime
 from typing import List
@@ -9,46 +9,19 @@ from langchain_openai import OpenAIEmbeddings
 
 from ..config import settings
 from ..db.mongodb import get_database
-from ..vector_store.faiss_store import get_vector_store
+from ..vector_store import get_vector_store  # Uses factory pattern now
 
 async def process_and_store_documents(documents: List[Document], user_id: str):
-    """Process documents and store in MongoDB Atlas with enhanced error handling"""
-    print(f"\n==== DOCUMENT PROCESSING (ATLAS ENHANCED) ====")
+    """Process documents and store in MongoDB with vector embeddings"""
+    print(f"\n==== DOCUMENT PROCESSING (MongoDB Vector Store) ====")
     print(f"Processing {len(documents)} documents for user {user_id}")
     
     try:
-        # Step 1: Test database connection first
-        print(f"Step 1: Testing MongoDB Atlas connection")
-        try:
-            db = get_database()
-            # Test the connection with a simple ping
-            db.command('ping')
-            print(f"✅ Atlas connection successful")
-            
-            # Test collection access
-            docs_collection = db[settings.DOCUMENTS_COLLECTION]
-            print(f"✅ Documents collection access successful: {settings.DOCUMENTS_COLLECTION}")
-            
-        except Exception as e:
-            print(f"❌ Atlas connection failed: {str(e)}")
-            # Try to provide more specific error information
-            if "authentication failed" in str(e).lower():
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"MongoDB Atlas authentication failed. Check username/password and IP whitelist."
-                )
-            elif "connection" in str(e).lower():
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Cannot connect to MongoDB Atlas. Check connection string and network access."
-                )
-            else:
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Database connection error: {str(e)}"
-                )
+        print(f"Step 1: Getting database connection")
+        db = get_database()
+        print(f"✅ Database connection successful")
         
-        # Step 2: Split documents into chunks
+        # Split documents into chunks
         print(f"Step 2: Splitting documents into chunks")
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.CHUNK_SIZE,
@@ -58,8 +31,9 @@ async def process_and_store_documents(documents: List[Document], user_id: str):
         chunks = text_splitter.split_documents(documents)
         print(f"✅ Split into {len(chunks)} chunks")
         
-        # Step 3: Store original documents in MongoDB Atlas
-        print(f"Step 3: Storing original documents in Atlas")
+        # Store original documents in MongoDB
+        print(f"Step 3: Storing original documents in MongoDB")
+        docs_collection = db[settings.DOCUMENTS_COLLECTION]
         document_ids = []
         
         for i, doc in enumerate(documents):
@@ -67,51 +41,34 @@ async def process_and_store_documents(documents: List[Document], user_id: str):
             document_ids.append(doc_id)
             print(f"  Storing document {i+1} with ID: {doc_id}")
             
-            # Prepare document for Atlas
+            # Store document metadata and content
             doc_record = {
-                "_id": doc_id,  # Use our UUID as the _id
+                "_id": doc_id,
                 "content": doc.page_content,
-                "metadata": doc.metadata if doc.metadata else {},
+                "metadata": doc.metadata,
                 "user_id": user_id,
                 "date_added": datetime.now(),
-                "status": "processed",
-                "chunk_count": 0  # Will be updated later
+                "chunk_count": 0,  # Will be updated after chunking
+                "processing_status": "processing"
             }
-            
             try:
-                # Insert with proper error handling for Atlas
                 result = docs_collection.insert_one(doc_record)
-                print(f"  ✅ Atlas insert successful: {result.acknowledged}")
-                print(f"     Inserted ID: {result.inserted_id}")
-                
+                print(f"  ✅ MongoDB insert successful: {result.acknowledged}")
             except Exception as e:
-                print(f"  ❌ Atlas insert error: {str(e)}")
-                # Handle specific Atlas errors
-                if "duplicate key" in str(e).lower():
-                    print(f"  ⚠️ Document with ID {doc_id} already exists, skipping...")
-                    continue
-                elif "authentication" in str(e).lower():
-                    raise HTTPException(
-                        status_code=500, 
-                        detail="Atlas authentication failed during document insert"
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Failed to store document in Atlas: {str(e)}"
-                    )
+                print(f"  ❌ MongoDB insert error: {str(e)}")
+                raise
             
             # Add document_id to metadata for reference
             if not doc.metadata:
                 doc.metadata = {}
             doc.metadata["document_id"] = doc_id
         
-        # Step 4: Process chunks and add parent references
-        print(f"Step 4: Processing chunks with parent references")
-        chunks_processed = 0
+        # Add parent document reference to chunks
+        print(f"Step 4: Adding parent document references to chunks")
+        chunk_count_by_doc = {}
         
         for i, chunk in enumerate(chunks):
-            # Find parent document for this chunk
+            # Find document this chunk belongs to
             parent_doc = None
             for doc in documents:
                 if chunk.page_content in doc.page_content:
@@ -119,108 +76,192 @@ async def process_and_store_documents(documents: List[Document], user_id: str):
                     break
             
             if parent_doc and "document_id" in parent_doc.metadata:
+                # Add reference to parent document
                 if not chunk.metadata:
                     chunk.metadata = {}
-                chunk.metadata["parent_document_id"] = parent_doc.metadata["document_id"]
+                
+                parent_doc_id = parent_doc.metadata["document_id"]
+                chunk.metadata["parent_document_id"] = parent_doc_id
+                chunk.metadata["document_id"] = parent_doc_id  # For compatibility
                 chunk.metadata["user_id"] = user_id
                 chunk.metadata["chunk_index"] = i
-                chunks_processed += 1
+                
+                # Count chunks per document
+                if parent_doc_id not in chunk_count_by_doc:
+                    chunk_count_by_doc[parent_doc_id] = 0
+                chunk_count_by_doc[parent_doc_id] += 1
                 
             if i < 3 or i == len(chunks) - 1:
                 print(f"  Chunk {i+1}/{len(chunks)} metadata: {chunk.metadata}")
         
-        print(f"✅ Processed {chunks_processed} chunks with parent references")
-        
-        # Step 5: Update document chunk counts in Atlas
-        print(f"Step 5: Updating document chunk counts")
-        for doc_id in document_ids:
-            chunk_count = sum(1 for chunk in chunks 
-                            if chunk.metadata and 
-                            chunk.metadata.get("parent_document_id") == doc_id)
-            
-            try:
-                update_result = docs_collection.update_one(
-                    {"_id": doc_id},
-                    {"$set": {"chunk_count": chunk_count, "last_updated": datetime.now()}}
-                )
-                print(f"  Updated document {doc_id}: {chunk_count} chunks")
-                
-            except Exception as e:
-                print(f"  ⚠️ Warning: Could not update chunk count for {doc_id}: {e}")
-        
-        # Step 6: Add to FAISS vector store
-        print(f"Step 6: Adding chunks to FAISS vector store")
+        # Add chunks to MongoDB vector store
+        print(f"Step 5: Adding chunks to MongoDB vector store")
         try:
             vector_store = get_vector_store()
-            print(f"  Vector store initialized")
+            print(f"  Vector store initialized: {type(vector_store).__name__}")
             
-            # Validate OpenAI API key
+            # Check OpenAI API key
             openai_key = settings.OPENAI_API_KEY
             if not openai_key:
-                print(f"  ❌ ERROR: OPENAI_API_KEY is not set")
-                raise HTTPException(
-                    status_code=500, 
-                    detail="OpenAI API key not configured. Vector embeddings cannot be created."
-                )
+                print(f"  ❌ WARNING: OPENAI_API_KEY is not set")
             else:
-                print(f"  ✅ OPENAI_API_KEY is configured (length: {len(openai_key)})")
+                print(f"  ✅ OPENAI_API_KEY is set (length: {len(openai_key)})")
             
             # Add documents to vector store
-            if chunks:
-                vector_store.add_documents(chunks, user_id)
-                print(f"  ✅ Successfully added {len(chunks)} chunks to vector store")
+            print(f"  Adding {len(chunks)} chunks to vector store...")
+            vector_store.add_documents(chunks, user_id)
+            print(f"  ✅ Successfully added chunks to MongoDB vector store")
+            
+            # Get vector store statistics
+            try:
+                stats = vector_store.get_stats()
+                print(f"  📊 Vector store now contains {stats.get('total_documents', 0)} total documents")
+            except Exception as e:
+                print(f"  ⚠️ Could not get vector store stats: {e}")
                 
-                # Save the FAISS index
-                vector_store.save_local("faiss_index")
-                print(f"  ✅ FAISS index saved to disk")
-            else:
-                print(f"  ⚠️ No chunks to add to vector store")
-            
         except Exception as e:
-            print(f"  ❌ Vector store error: {str(e)}")
             import traceback
-            print(f"  📋 Traceback: {traceback.format_exc()}")
-            
-            # Don't fail the entire process if vector store fails
-            print(f"  ⚠️ Continuing without vector embeddings...")
+            print(f"  ❌ Vector store error: {str(e)}")
+            print(f"  ❌ Traceback: {traceback.format_exc()}")
+            raise
         
-        # Step 7: Final validation
-        print(f"Step 7: Final validation")
-        try:
-            # Verify documents were stored
-            stored_count = docs_collection.count_documents({"user_id": user_id})
-            print(f"  📊 Total documents for user {user_id}: {stored_count}")
-            
-            # Verify our specific documents
-            our_docs_count = docs_collection.count_documents({"_id": {"$in": document_ids}})
-            print(f"  📊 Our documents stored: {our_docs_count}/{len(document_ids)}")
-            
-        except Exception as e:
-            print(f"  ⚠️ Warning: Could not perform final validation: {e}")
+        # Update document records with chunk counts and completion status
+        print(f"Step 6: Updating document records with processing results")
+        for doc_id in document_ids:
+            chunk_count = chunk_count_by_doc.get(doc_id, 0)
+            try:
+                docs_collection.update_one(
+                    {"_id": doc_id},
+                    {
+                        "$set": {
+                            "chunk_count": chunk_count,
+                            "processing_status": "completed",
+                            "processing_completed_at": datetime.now()
+                        }
+                    }
+                )
+                print(f"  ✅ Updated document {doc_id}: {chunk_count} chunks")
+            except Exception as e:
+                print(f"  ⚠️ Warning: Could not update document {doc_id}: {e}")
         
-        print(f"🎉 Successfully processed and stored {len(document_ids)} documents in Atlas!")
-        print(f"📋 Document IDs: {document_ids}")
+        print(f"✅ Successfully processed documents: {document_ids}")
+        print(f"📊 Summary:")
+        print(f"  - Original documents: {len(documents)}")
+        print(f"  - Generated chunks: {len(chunks)}")
+        print(f"  - Document IDs: {document_ids}")
+        
         return document_ids
     
-    except HTTPException:
-        # Re-raise HTTP exceptions without modification
-        raise
     except Exception as e:
-        print(f"❌ CRITICAL ERROR in process_and_store_documents: {str(e)}")
-        print(f"Exception type: {type(e).__name__}")
         import traceback
-        print(f"📋 Full traceback: {traceback.format_exc()}")
+        print(f"❌ ERROR in process_and_store_documents: {str(e)}")
+        print(f"Exception type: {type(e).__name__}")
+        print(f"Traceback: {traceback.format_exc()}")
         
-        # Provide more helpful error messages
-        error_message = str(e)
-        if "authentication" in error_message.lower():
-            error_message = "MongoDB Atlas authentication failed. Please check your username, password, and IP whitelist settings."
-        elif "connection" in error_message.lower():
-            error_message = "Cannot connect to MongoDB Atlas. Please check your connection string and network settings."
-        elif "timeout" in error_message.lower():
-            error_message = "Connection to MongoDB Atlas timed out. Please check your network connection."
+        # Update any documents that were created to show error status
+        try:
+            if 'document_ids' in locals() and document_ids:
+                db = get_database()
+                docs_collection = db[settings.DOCUMENTS_COLLECTION]
+                for doc_id in document_ids:
+                    docs_collection.update_one(
+                        {"_id": doc_id},
+                        {
+                            "$set": {
+                                "processing_status": "error",
+                                "processing_error": str(e),
+                                "processing_error_at": datetime.now()
+                            }
+                        }
+                    )
+        except Exception as cleanup_error:
+            print(f"⚠️ Could not update error status: {cleanup_error}")
+            
+        raise HTTPException(status_code=500, detail=f"Error processing documents: {str(e)}")
+
+# Additional utility functions for MongoDB vector store
+
+async def get_document_chunks(document_id: str, user_id: str = None) -> List[Document]:
+    """Retrieve all chunks for a specific document"""
+    try:
+        vector_store = get_vector_store()
         
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Document processing failed: {error_message}"
-        )
+        # For MongoDB vector store, we need to query by document_id
+        if hasattr(vector_store, 'collection'):
+            # MongoDB vector store
+            filter_query = {"metadata.document_id": document_id}
+            if user_id:
+                filter_query["metadata.user_id"] = user_id
+            
+            results = list(vector_store.collection.find(filter_query).sort("metadata.chunk_index", 1))
+            
+            documents = []
+            for result in results:
+                doc = Document(
+                    page_content=result["text"],
+                    metadata=result["metadata"]
+                )
+                documents.append(doc)
+            
+            return documents
+        else:
+            # Fallback for other vector stores
+            print("⚠️ get_document_chunks not fully implemented for this vector store type")
+            return []
+            
+    except Exception as e:
+        print(f"Error retrieving document chunks: {str(e)}")
+        return []
+
+async def delete_document_vectors(document_id: str, user_id: str = None) -> int:
+    """Delete all vector embeddings for a specific document"""
+    try:
+        vector_store = get_vector_store()
+        
+        if hasattr(vector_store, 'delete_by_document'):
+            # MongoDB vector store with delete method
+            deleted_count = vector_store.delete_by_document(document_id)
+            print(f"Deleted {deleted_count} vectors for document {document_id}")
+            return deleted_count
+        else:
+            print("⚠️ delete_document_vectors not implemented for this vector store type")
+            return 0
+            
+    except Exception as e:
+        print(f"Error deleting document vectors: {str(e)}")
+        raise
+
+async def get_user_vector_stats(user_id: str) -> dict:
+    """Get vector storage statistics for a user"""
+    try:
+        vector_store = get_vector_store()
+        
+        if hasattr(vector_store, 'collection'):
+            # MongoDB vector store
+            user_doc_count = vector_store.collection.count_documents({"metadata.user_id": user_id})
+            
+            # Get document breakdown
+            pipeline = [
+                {"$match": {"metadata.user_id": user_id}},
+                {"$group": {
+                    "_id": "$metadata.document_id",
+                    "chunk_count": {"$sum": 1},
+                    "latest_created": {"$max": "$created_at"}
+                }},
+                {"$sort": {"latest_created": -1}}
+            ]
+            
+            doc_breakdown = list(vector_store.collection.aggregate(pipeline))
+            
+            return {
+                "user_id": user_id,
+                "total_chunks": user_doc_count,
+                "unique_documents": len(doc_breakdown),
+                "document_breakdown": doc_breakdown
+            }
+        else:
+            return {"user_id": user_id, "error": "Stats not available for this vector store type"}
+            
+    except Exception as e:
+        print(f"Error getting user vector stats: {str(e)}")
+        return {"user_id": user_id, "error": str(e)}
