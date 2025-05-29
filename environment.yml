@@ -18,6 +18,7 @@ dependencies:
     - beautifulsoup4==4.12.2
     - requests==2.31.0
     - rich==13.7.0
+    - pypdf==5.5.0
     # LangChain dependencies with compatible versions
     - langchain>=0.1.0
     - langchain-openai>=0.0.5

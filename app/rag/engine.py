@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, MessagesState, START, END
-# from langgraph.checkpoint.mongodb import MongoDBSaver
+from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
 from ..config import settings
@@ -52,6 +52,8 @@ class RAGEngine:
         # Use memory-based checkpointer for simplicity
         checkpointer = InMemorySaver()
         print(f"💾 Using InMemorySaver checkpointer")
+
+        # checkpointer = MongoDBSaver()
         
         # Create the LLM with tools
         llm_with_tools = self.llm.bind_tools([retrieve])

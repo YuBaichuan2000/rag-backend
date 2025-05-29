@@ -135,21 +135,22 @@ class ChatbotTester:
                 console.print(f"[bold red]Error:[/bold red] Unsupported file type {file_extension}")
                 return
             
-            # Create form data
-            files = {'file': (filename, open(file_path, 'rb'), content_type)}
-            data = {'user_id': self.user_id}
-            
-            # Send request
-            response = requests.post(endpoint, files=files, data=data)
-            response.raise_for_status()
+            # Use context manager to properly handle file
+            with open(file_path, 'rb') as file_obj:
+                files = {'file': (filename, file_obj, content_type)}
+                data = {'user_id': self.user_id}
+                
+                # Send request
+                response = requests.post(endpoint, files=files, data=data)
+                response.raise_for_status()
             
             # Parse response
-            data = response.json()
+            response_data = response.json()
             
             # Display response
             console.print(f"\n[bold green]File uploaded successfully![/bold green]")
-            console.print(f"Document ID: {data['document_id']}")
-            console.print(f"Title: {data['title']}")
+            console.print(f"Document ID: {response_data['document_id']}")
+            console.print(f"Title: {response_data['title']}")
             
         except Exception as e:
             console.print(f"[bold red]Error:[/bold red] {str(e)}")
@@ -160,6 +161,7 @@ class ChatbotTester:
             endpoint = f"{self.host}/conversations?user_id={self.user_id}"
             response = requests.get(endpoint)
             response.raise_for_status()
+         
             
             # Parse response
             data = response.json()
