@@ -23,61 +23,61 @@ async def chat_endpoint(request: ChatRequest):
             request.thread_id
         )
         
-        # Get database
-        db = get_database()
+        # # Get database
+        # db = get_database()
         
-        # If this is a new conversation, create conversation record
-        if not request.thread_id:
-            # Create new conversation record (aligned with Express schema)
-            conversation_doc = {
-                "conversation_id": thread_id,
-                "user_id": request.user_id,
-                "title": request.message[:50] + ("..." if len(request.message) > 50 else ""),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now(),
-                "message_count": 0,
-                "last_message_preview": ""
-            }
-            db.conversations.insert_one(conversation_doc)
+        # # If this is a new conversation, create conversation record
+        # if not request.thread_id:
+        #     # Create new conversation record (aligned with Express schema)
+        #     conversation_doc = {
+        #         "conversation_id": thread_id,
+        #         "user_id": request.user_id,
+        #         "title": request.message[:50] + ("..." if len(request.message) > 50 else ""),
+        #         "created_at": datetime.now(),
+        #         "updated_at": datetime.now(),
+        #         "message_count": 0,
+        #         "last_message_preview": ""
+        #     }
+        #     db.conversations.insert_one(conversation_doc)
         
-        # Save user message to messages collection
-        user_message_id = str(uuid.uuid4())
-        user_message = {
-            "conversation_id": thread_id,
-            "message_id": user_message_id,
-            "type": "user",
-            "content": request.message,
-            "timestamp": datetime.now(),
-            "metadata": {"user_id": request.user_id}
-        }
-        db.messages.insert_one(user_message)
+        # # Save user message to messages collection
+        # user_message_id = str(uuid.uuid4())
+        # user_message = {
+        #     "conversation_id": thread_id,
+        #     "message_id": user_message_id,
+        #     "type": "user",
+        #     "content": request.message,
+        #     "timestamp": datetime.now(),
+        #     "metadata": {"user_id": request.user_id}
+        # }
+        # db.messages.insert_one(user_message)
         
-        # Save AI response to messages collection
-        ai_message_id = str(uuid.uuid4())
-        ai_message = {
-            "conversation_id": thread_id,
-            "message_id": ai_message_id,
-            "type": "ai",
-            "content": response_text,
-            "timestamp": datetime.now(),
-            "metadata": {
-                "model_used": settings.LLM_MODEL,
-                "temperature": settings.LLM_TEMPERATURE
-            }
-        }
-        db.messages.insert_one(ai_message)
+        # # Save AI response to messages collection
+        # ai_message_id = str(uuid.uuid4())
+        # ai_message = {
+        #     "conversation_id": thread_id,
+        #     "message_id": ai_message_id,
+        #     "type": "ai",
+        #     "content": response_text,
+        #     "timestamp": datetime.now(),
+        #     "metadata": {
+        #         "model_used": settings.LLM_MODEL,
+        #         "temperature": settings.LLM_TEMPERATURE
+        #     }
+        # }
+        # db.messages.insert_one(ai_message)
         
-        # Update conversation metadata
-        db.conversations.update_one(
-            {"conversation_id": thread_id},
-            {
-                "$set": {
-                    "updated_at": datetime.now(),
-                    "last_message_preview": response_text[:100] + ("..." if len(response_text) > 100 else "")
-                },
-                "$inc": {"message_count": 2}  # User + AI message
-            }
-        )
+        # # Update conversation metadata
+        # db.conversations.update_one(
+        #     {"conversation_id": thread_id},
+        #     {
+        #         "$set": {
+        #             "updated_at": datetime.now(),
+        #             "last_message_preview": response_text[:100] + ("..." if len(response_text) > 100 else "")
+        #         },
+        #         "$inc": {"message_count": 2}  # User + AI message
+        #     }
+        # )
         
         return ChatResponse(
             response=response_text, 
