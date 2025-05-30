@@ -32,8 +32,8 @@ def init_database():
     
     # Create collections if they don't exist
     collections = [
-        "conversations",  # Updated from CHAT_HISTORY_COLLECTION
-        "messages",       # New collection for individual messages
+        settings.CHAT_HISTORY_COLLECTION,  # Updated from CHAT_HISTORY_COLLECTION
+        settings.MESSAGES_COLLECTION,       # New collection for individual messages
         settings.DOCUMENTS_COLLECTION,
         settings.VECTORS_COLLECTION
     ]
