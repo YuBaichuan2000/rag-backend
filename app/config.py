@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     VECTORS_COLLECTION: str = os.getenv("VECTORS_COLLECTION", "vectors")
     CHAT_HISTORY_COLLECTION: str = os.getenv("CHAT_HISTORY_COLLECTION", "conversations")
     MESSAGES_COLLECTION: str = os.getenv("MESSAGES_COLLECTION", "messages")
+    # LangGraph MongoDB Checkpointer Settings
+    LANGGRAPH_CHECKPOINT_COLLECTION: str = os.getenv("LANGGRAPH_CHECKPOINT_COLLECTION", "langgraph_checkpoints")
+    ENABLE_MONGODB_CHECKPOINTER: bool = os.getenv("ENABLE_MONGODB_CHECKPOINTER", "True").lower() == "true"
 
     # Vector Store Settings
     VECTOR_STORE_TYPE: str = os.getenv("VECTOR_STORE_TYPE", "mongodb")  # "mongodb" or "faiss"

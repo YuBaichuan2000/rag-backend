@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, MessagesState, START, END
-# from langgraph.checkpoint.mongodb import MongoDBSaver
+from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
 from ..config import settings
@@ -87,31 +87,32 @@ class RAGEngine:
                 print(f"📋 Traceback: {traceback.format_exc()}")
                 return f"Error retrieving documents: {str(e)}"
         
-        # # Choose checkpointer based on configuration
-        # if settings.VECTOR_STORE_TYPE == "mongodb":
-        #     try:
-        #         # Try to use MongoDB checkpointer for consistency
-        #         print("🔄 Attempting to initialize MongoDB checkpointer...")
+        # Choose checkpointer based on configuration
+        if settings.VECTOR_STORE_TYPE == "mongodb":
+            try:
+                # Try to use MongoDB checkpointer for consistency
+                print("🔄 Attempting to initialize MongoDB checkpointer...")
                 
-        #         # Get MongoDB connection details
-        #         db = get_database()
+                # Get MongoDB connection details
+                db = get_database()
                 
-        #         # Create MongoDB checkpointer
-        #         # Note: MongoDBSaver requires specific setup
-        #         checkpointer = MongoDBSaver(
-        #             db=db,
-        #             collection_name="langgraph_checkpoints"
-        #         )
-        #         print("✅ Using MongoDB checkpointer for LangGraph state persistence")
+                # Create MongoDB checkpointer
+                # Note: MongoDBSaver requires specific setup
+                checkpointer = MongoDBSaver(
+                    client=db,
+                    collection_name="langgraph_checkpoints"
+                )
+
+                print("✅ Using MongoDB checkpointer for LangGraph state persistence")
                 
-        #     except Exception as e:
-        #         print(f"⚠️ Could not initialize MongoDB checkpointer: {e}")
-        #         print("🔄 Falling back to InMemory checkpointer")
-        #         checkpointer = InMemorySaver()
-        # else:
-        #     # Use memory-based checkpointer for FAISS or other stores
-        checkpointer = InMemorySaver()
-        print(f"💾 Using InMemory checkpointer")
+            except Exception as e:
+                print(f"⚠️ Could not initialize MongoDB checkpointer: {e}")
+                print("🔄 Falling back to InMemory checkpointer")
+                checkpointer = InMemorySaver()
+        else:
+            # Use memory-based checkpointer for FAISS or other stores
+            checkpointer = InMemorySaver()
+            print(f"💾 Using InMemory checkpointer")
         
         # Create the LLM with tools
         llm_with_tools = self.llm.bind_tools([retrieve])
